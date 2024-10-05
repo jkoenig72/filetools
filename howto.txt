@@ -1,0 +1,5 @@
+python3 convertx265_to.py -c /mnt/i//temp/done6 && python3 convertx265_to.py -w done6.db
+
+python3 cleanupHexFiles.py /mnt/m/temp3 && python3 moveFilesUp.py /mnt/m/temp3 && find /mnt/m/temp3 -empty -type d -delete
+
+python3 analyseMovieFolderFinal.py -d 0 -c /mnt/i/temp/_done2 &&  python3 analyseMovieFolderFinal2.py -d 0 -w view _done2_videos.db
