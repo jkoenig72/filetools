@@ -13,20 +13,33 @@ from multiprocessing import Process, Queue
 import sys
 import time
 
-
 def extract_frame_process(video_path, queue):
+    """
+    Extract frames from a video at specific time intervals.
+
+    Parameters
+    ----------
+    video_path : str
+        Path to the video file.
+    queue : multiprocessing.Queue
+        Queue for storing extracted frames and any error message.
+    
+    Exceptions
+    ----------
+    Puts an empty list and error message into the queue if an error occurs.
+    """
     try:
-        clip = VideoFileClip(video_path)
-        duration = clip.duration
+        clip = VideoFileClip(video_path)  # Open the video file
+        duration = clip.duration  # Get duration of the video
         frames = []
         now = datetime.now()
         formatted_now = now.strftime("%d.%m.%Y:%H:%M:%S")
         print(f"{formatted_now}: Start get Frames from: {video_path}")
 
-        # Your existing frame extraction logic
+        # Extract frames at intervals between 20% and 80% of the video
         for t in [duration/10 * i for i in range(2, 8)]:
             frame = clip.get_frame(t)
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Convert colorspace
             frames.append(frame)
         clip.close()
 
@@ -39,7 +52,22 @@ def extract_frame_process(video_path, queue):
         queue.put(([], str(e)))
 
 def extract_frames(video_path, timeout=60):
-    queue = Queue()
+    """
+    Extract frames from a video using a separate process with a timeout.
+
+    Parameters
+    ----------
+    video_path : str
+        Path to the video file.
+    timeout : int, optional
+        Timeout duration in seconds (default is 60).
+    
+    Returns
+    -------
+    tuple
+        A tuple containing a list of frames and an error message (if any).
+    """
+    queue = Queue()  # Create a new queue for inter-process communication
     p = Process(target=extract_frame_process, args=(video_path, queue))
     p.start()
     p.join(timeout)
@@ -55,6 +83,16 @@ def extract_frames(video_path, timeout=60):
     return frames, error        
 
 def save_frame_for_inspection(frame, filename):
+    """
+    Save a single frame to disk for inspection.
+
+    Parameters
+    ----------
+    frame : array
+        The video frame to be saved.
+    filename : str
+        The name under which the frame will be saved.
+    """
     # Ensure the directory exists
     save_dir = "/mnt/truenas/storage2/complete/1byd_h265"
     save_path = os.path.join(save_dir, filename)
@@ -63,14 +101,42 @@ def save_frame_for_inspection(frame, filename):
     cv2.imwrite(save_path, frame)
     print(f"Saved frame for inspection: {save_path}")
 
-
 def mse(imageA, imageB):
-    # Calculate the mean squared error between the two images
+    """
+    Calculate the mean squared error between two images.
+
+    Parameters
+    ----------
+    imageA : array
+        First image.
+    imageB : array
+        Second image.
+    
+    Returns
+    -------
+    float
+        Mean Squared Error between the two images.
+    """
     err = np.sum((imageA.astype("float") - imageB.astype("float")) ** 2)
     err /= float(imageA.shape[0] * imageA.shape[1])
     return err
 
 def psnr(img1, img2):
+    """
+    Calculate the Peak Signal-to-Noise Ratio between two images.
+
+    Parameters
+    ----------
+    img1 : array
+        First image.
+    img2 : array
+        Second image.
+    
+    Returns
+    -------
+    float
+        PSNR value between the two images.
+    """
     mse = np.mean((img1 - img2) ** 2)
     if mse == 0:
         return float('inf')
@@ -78,6 +144,21 @@ def psnr(img1, img2):
     return 20 * np.log10(max_pixel / np.sqrt(mse))
 
 def compare_videos(original_path, converted_path):
+    """
+    Compare two videos based on their frames' MSE and PSNR metrics.
+
+    Parameters
+    ----------
+    original_path : str
+        Path to the original video file.
+    converted_path : str
+        Path to the converted video file.
+    
+    Returns
+    -------
+    tuple
+        Boolean indicating if videos are considered the same and diagnostics dictionary.
+    """
     original_frames, original_error = extract_frames(original_path)
     converted_frames, converted_error = extract_frames(converted_path)
     
@@ -98,12 +179,6 @@ def compare_videos(original_path, converted_path):
             mse_errors.append(mse_error)
             if mse_error < 50:
                 frames_below_mse_threshold += 1
-
-           # Calculate SSIM
-           # ssim_score = ssim(original_frame, converted_frame, data_range=converted_frame.max() - converted_frame.min(), multichannel=True)
-           # ssim_scores.append(ssim_score)
-           # if ssim_score > 0.8:
-           #     frames_above_ssim_threshold += 1
 
             # Calculate PSNR
             psnr_score = psnr(original_frame, converted_frame)
@@ -129,10 +204,18 @@ def compare_videos(original_path, converted_path):
         }
     }
 
-
 def setup_database(db_path):
+    """
+    Setup a SQLite database to store video information.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    # Create table if it doesn't exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY,
@@ -152,8 +235,27 @@ def setup_database(db_path):
     formatted_now = now.strftime("%d.%m.%Y:%H:%M:%S")
     print(f"{formatted_now}: Database created at: {db_path}")
 
-# Function to add video to the database with metadata
 def add_video_to_db(db_path, original_path, codec, resolution, filename, extension, converted_path=None):
+    """
+    Add video metadata to the database.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+    original_path : str
+        Path to the original video file.
+    codec : str
+        Codec used by the video.
+    resolution : str
+        Resolution of the video.
+    filename : str
+        Name of the video file.
+    extension : str
+        File extension of the video.
+    converted_path : str, optional
+        Path to the converted video file (default is None).
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     # Check if a record with the same original_path already exists
@@ -184,9 +286,17 @@ def add_video_to_db(db_path, original_path, codec, resolution, filename, extensi
             print(f"{formatted_now}:Error adding {filename} to database: {e}")
     conn.close()
 
-
-# Function to process a directory of video files with expanded movie extensions
 def process_directory(db_path, directory):
+    """
+    Process all video files in a directory and add them to the database.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+    directory : str
+        Directory path containing video files.
+    """
     video_extensions = (
         '.mp4', '.avi', '.mov', '.flv', '.wmv', '.mkv',
         '.m4v', '.mpeg', '.m2ts', '.mpg', '.divx'
@@ -209,6 +319,19 @@ def process_directory(db_path, directory):
                     print(f"{formatted_now}: Failed to retrieve metadata for {video_path}")
 
 def get_video_metadata(video_path):
+    """
+    Retrieve codec and resolution from a video file using ffprobe.
+
+    Parameters
+    ----------
+    video_path : str
+        Path to the video file.
+    
+    Returns
+    -------
+    tuple
+        A tuple containing codec and resolution strings.
+    """
     cmd = [
         'ffprobe', 
         '-v', 'quiet', 
@@ -231,12 +354,38 @@ def get_video_metadata(video_path):
     return None, None
 
 def check_codec(codec):
+    """
+    Check if a video codec is H.265 or HEVC.
+
+    Parameters
+    ----------
+    codec : str
+        Codec name.
+    
+    Returns
+    -------
+    bool
+        True if codec is H.265/HEVC, False otherwise.
+    """
     codec = codec.lower()  # Convert to lowercase for case-insensitive comparison
     if '265' in codec or 'hevc' in codec:
         return True
     return False
 
 def create_target_directory(db_path):
+    """
+    Create a target directory for storing converted videos.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+
+    Returns
+    -------
+    str
+        Path to the newly created directory.
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT original_path FROM videos")
@@ -259,6 +408,14 @@ def create_target_directory(db_path):
     return new_directory
 
 def create_db_from_path(path):
+    """
+    Create a database from a given directory path.
+
+    Parameters
+    ----------
+    path : str
+        Path of the directory to scan for videos.
+    """
     if not os.path.exists(path):
         print(f"The path {path} does not exist.")
         return
@@ -270,6 +427,16 @@ def create_db_from_path(path):
     print(f"Database '{db_name}' completed in the current directory.")
 
 def get_duration_process(video_path, queue):
+    """
+    Get the duration of a video using ffprobe in a separate process.
+
+    Parameters
+    ----------
+    video_path : str
+        Path to the video file.
+    queue : multiprocessing.Queue
+        Queue for storing the video duration.
+    """
     try:
         # Using ffprobe to get video duration
         result = subprocess.run(
@@ -287,6 +454,21 @@ def get_duration_process(video_path, queue):
         print(f"Error in subprocess getting duration of video: {video_path}, Error: {e}")
 
 def get_video_duration(video_path, timeout=60):
+    """
+    Get the duration of a video file with a timeout to ensure timely execution.
+
+    Parameters
+    ----------
+    video_path : str
+        Path to the video file.
+    timeout : int, optional
+        Maximum time in seconds to allow for getting video duration (default is 60).
+    
+    Returns
+    -------
+    float or None
+        Duration in seconds if successful, else None.
+    """
     queue = Queue()
     p = Process(target=get_duration_process, args=(video_path, queue))
     p.start()
@@ -300,6 +482,25 @@ def get_video_duration(video_path, timeout=60):
     return queue.get()
 
 def convert_video(input_file, output_file, max_retries=999, wait_time=600):
+    """
+    Convert a video file to use the H.265 codec, retrying on specific errors.
+
+    Parameters
+    ----------
+    input_file : str
+        Path to the input video file.
+    output_file : str
+        Path where the converted video will be saved.
+    max_retries : int, optional
+        Maximum number of retries on failure (default is 999).
+    wait_time : int, optional
+        Wait time in seconds before retrying conversion (default is 600).
+    
+    Returns
+    -------
+    tuple
+        New file size and any error message encountered during conversion.
+    """
     attempts = 0
     while attempts < max_retries:
         try:
@@ -335,20 +536,57 @@ def convert_video(input_file, output_file, max_retries=999, wait_time=600):
     return 0, f'Failed to convert after {max_retries} attempts.'
 
 def create_status_file(base_path, filename, status):
-    """Create a status file with a specific extension based on the conversion status."""
+    """
+    Create a status file indicating the conversion status of a video.
+
+    Parameters
+    ----------
+    base_path : str
+        Base directory to save the status file.
+    filename : str
+        Base name of the status file without the status indicator.
+    status : str
+        Status indicator added as a file extension.
+    """
     status_filename = f"{filename}{status}"
     status_filepath = os.path.join(base_path, status_filename)
     with open(status_filepath, 'w') as f:
         f.write('')  # Create an empty file
 
 def move_and_rename_video(original_path, new_directory, new_filename_base):
-    """Move and rename a video file to the new directory with a new base filename."""
+    """
+    Move and rename a video file to a specified directory.
+
+    Parameters
+    ----------
+    original_path : str
+        Path to the original video file.
+    new_directory : str
+        Directory to move the video to.
+    new_filename_base : str
+        Base name to use for the renamed video file.
+    
+    Returns
+    -------
+    str
+        New path to the moved and renamed video file.
+    """
     new_filename = f"{new_filename_base}_h265.mp4"
     new_path = os.path.join(new_directory, new_filename)
     shutil.move(original_path, new_path)
     return new_path
 
 def process_videos_for_conversion(db_path, same_directory):
+    """
+    Process video files in the database, checking and performing conversion as needed.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+    same_directory : bool
+        Flag indicating whether to save converted videos in the same directory.
+    """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM videos WHERE converted = 0")
@@ -564,6 +802,23 @@ def process_videos_for_conversion(db_path, same_directory):
     conn.close()
 
 def are_values_equal(a, b, tolerance=5):
+    """
+    Check if two numeric values are equal within a certain tolerance.
+
+    Parameters
+    ----------
+    a : float
+        First value.
+    b : float
+        Second value.
+    tolerance : int
+        Maximum allowable difference between the values (default is 5).
+    
+    Returns
+    -------
+    bool
+        True if values are within tolerance, False otherwise.
+    """
     v = abs(a - b) 
     if v > tolerance:
         now = datetime.now()
@@ -572,6 +827,9 @@ def are_values_equal(a, b, tolerance=5):
     return v <= tolerance
 
 def main():
+    """
+    Main function to run the video database management tool with command-line arguments.
+    """
     parser = argparse.ArgumentParser(description="Video Database Management")
     parser.add_argument('-c', '--create', type=str, help="Create an initial DB with a given path")
     parser.add_argument('-w', '--work', type=str, help="Work with the created DB")
