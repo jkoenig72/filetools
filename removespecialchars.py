@@ -3,6 +3,7 @@ import re
 import unicodedata
 import argparse
 
+
 def translate_umlauts(filename):
     """Translate German umlauts in the given filename.
 
